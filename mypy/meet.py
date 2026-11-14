@@ -126,21 +126,41 @@ def narrow_declared_type(declared: Type, narrowed: Type) -> Type:
     if declared == narrowed:
         return original_declared
     if isinstance(declared, UnionType):
-        return make_simplified_union(
-            [
-                narrow_declared_type(x, narrowed)
-                for x in declared.relevant_items()
-                # This (ugly) special-casing is needed to support checking
-                # branches like this:
-                # x: Union[float, complex]
-                # if isinstance(x, int):
-                #     ...
-                if (
-                    is_overlapping_types(x, narrowed, ignore_promotions=True)
-                    or is_subtype(narrowed, x, ignore_promotions=False)
-                )
-            ]
+        # Narrowing often just removes items from a union. Avoid distributing
+        # over both unions for every instance they have in common. If narrowed
+        # introduces new items, they may need to be preserved alongside a common
+        # item (e.g. int and float, since we ignore promotions when simplifying).
+        narrowed_items = (
+            {get_proper_type(item) for item in narrowed.relevant_items()}
+            if isinstance(narrowed, UnionType)
+            else set()
         )
+        if narrowed_items and not narrowed_items.issubset(get_proper_types(declared.items)):
+            narrowed_items.clear()
+        new_items: list[Type] = []
+        for x in declared.relevant_items():
+            if narrowed_items:
+                proper_x = get_proper_type(x)
+                # Literal values and restricted truthiness still need to be combined.
+                if (
+                    isinstance(proper_x, Instance)
+                    and proper_x in narrowed_items
+                    and proper_x.last_known_value is None
+                    and proper_x.can_be_true
+                    and proper_x.can_be_false
+                ):
+                    new_items.append(x)
+                    continue
+            # This (ugly) special-casing is needed to support checking
+            # branches like this:
+            # x: Union[float, complex]
+            # if isinstance(x, int):
+            #     ...
+            if is_overlapping_types(x, narrowed, ignore_promotions=True) or is_subtype(
+                narrowed, x, ignore_promotions=False
+            ):
+                new_items.append(narrow_declared_type(x, narrowed))
+        return make_simplified_union(new_items)
     if is_enum_overlapping_union(declared, narrowed):
         return original_narrowed
     elif not is_overlapping_types(declared, narrowed, prohibit_none_typevar_overlap=True):

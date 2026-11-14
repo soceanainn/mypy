@@ -32,6 +32,7 @@ from mypy.nodes import (
 from mypy.state import state
 from mypy.types import (
     ENUM_REMOVED_PROPS,
+    TYPED_NAMEDTUPLE_NAMES,
     AnyType,
     CallableType,
     ExtraAttrs,
@@ -571,6 +572,24 @@ def make_simplified_union(
 
 def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[Type]:
     from mypy.subtypes import is_proper_subtype
+
+    if len(items) > 8:
+        # Large unions of unrelated classes are common for event types. If all
+        # items have different nominal types and none inherits from another,
+        # there can be no redundant items. Avoid quadratic subtype checks.
+        instances = get_proper_types(items)
+        if all(
+            isinstance(item, Instance)
+            and not item.type.is_protocol
+            and item.type.fullname != "builtins.object"
+            and item.type.fullname not in TYPED_NAMEDTUPLE_NAMES
+            for item in instances
+        ):
+            infos = {cast(Instance, item).type for item in instances}
+            if len(infos) == len(items) and not any(
+                base in infos for info in infos for base in info.mro[1:]
+            ):
+                return items
 
     # The first pass through this loop, we check if later items are subtypes of earlier items.
     # The second pass through this loop, we check if earlier items are subtypes of later items

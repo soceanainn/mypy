@@ -629,6 +629,43 @@ class TypeOpsSuite(Suite):
         # This shouldn't be very slow, even if the union is big.
         self.assert_simplified_union([*literals, fx.str_type], fx.str_type)
 
+    def test_simplify_large_union_of_instances(self) -> None:
+        fx = self.fx
+        items: list[Type] = [
+            Instance(fx.make_type_info(f"Event{i}", mro=[fx.oi]), []) for i in range(500)
+        ]
+        self.assert_simplified_union(items, UnionType(items))
+
+        # A base class or duplicate requires simplification, in either order.
+        items = items[:10]
+        self.assert_simplified_union([*items, fx.o], fx.o)
+        self.assert_simplified_union([*items, items[0]], UnionType(items))
+        self.assert_simplified_union([*items, fx.a, fx.b], UnionType([*items, fx.a]))
+        self.assert_simplified_union([*items, fx.ga, fx.gb], UnionType([*items, fx.ga, fx.gb]))
+        self.assert_simplified_union([*items, fx.ga, fx.gs2a], UnionType([*items, fx.ga]))
+
+    def test_simplify_large_union_with_protocol(self) -> None:
+        fx = self.fx
+        items: list[Type] = [
+            Instance(fx.make_type_info(f"Event{i}", mro=[fx.oi]), []) for i in range(10)
+        ]
+        protocol = fx.make_type_info("EmptyProtocol", mro=[fx.oi])
+        protocol.is_protocol = True
+        self.assert_simplified_union([*items, Instance(protocol, [])], Instance(protocol, []))
+
+    def test_simplify_large_union_with_named_tuple(self) -> None:
+        fx = self.fx
+        items: list[Type] = [
+            Instance(fx.make_type_info(f"Event{i}", mro=[fx.oi]), []) for i in range(10)
+        ]
+        named_tuple = fx.make_type_info("ExampleTuple", mro=[fx.oi])
+        named_tuple.is_named_tuple = True
+        # typing.NamedTuple is not in a named tuple's MRO.
+        fallback = Instance(fx.make_type_info("typing.NamedTuple", mro=[fx.oi]), [])
+        self.assert_simplified_union(
+            [*items, Instance(named_tuple, []), fallback], UnionType([*items, fallback])
+        )
+
     def test_simplified_union_with_str_instance_literals(self) -> None:
         fx = self.fx
 
@@ -1100,6 +1137,51 @@ class MeetSuite(Suite):
     def test_trivial_cases(self) -> None:
         for simple in self.fx.a, self.fx.o, self.fx.b:
             self.assert_meet(simple, simple, simple)
+
+    def test_narrow_large_union_of_instances(self) -> None:
+        fx = self.fx
+        items = [Instance(fx.make_type_info(f"Event{i}", mro=[fx.oi]), []) for i in range(300)]
+        declared = UnionType(items)
+        # The instances may be distinct objects after expanding a type alias.
+        narrowed = UnionType([Instance(item.type, []) for item in items[1:]])
+        with state.strict_optional_set(True):
+            assert_equal(narrow_declared_type(declared, narrowed), narrowed)
+
+    def test_narrow_union_preserves_truthiness(self) -> None:
+        fx = self.fx
+        for strict_optional in (False, True):
+            with state.strict_optional_set(strict_optional):
+                truthy_a = true_only(fx.a)
+                declared = UnionType([fx.d, fx.o, truthy_a])
+                narrowed = UnionType([fx.d, truthy_a])
+                result = get_proper_type(narrow_declared_type(declared, narrowed))
+                assert isinstance(result, UnionType)
+                assert_equal(result, UnionType([fx.d, fx.a]))
+                result_a = next(item for item in result.items if item == fx.a)
+                assert result_a.can_be_true
+                assert result_a.can_be_false == (not strict_optional)
+
+    def test_narrow_union_with_shared_instance_and_subclass(self) -> None:
+        fx = self.fx
+        with state.strict_optional_set(True):
+            assert_equal(
+                narrow_declared_type(UnionType([fx.a, fx.b, fx.d]), UnionType([fx.b, fx.d])),
+                UnionType([fx.b, fx.d]),
+            )
+            assert_equal(
+                narrow_declared_type(UnionType([fx.a, fx.d]), UnionType([fx.b, fx.d])),
+                UnionType([fx.b, fx.d]),
+            )
+
+    def test_narrow_union_with_literal_instances(self) -> None:
+        fx = self.fx
+        declared = UnionType([fx.lit1_inst, fx.a, fx.lit2, fx.lit1])
+        narrowed = UnionType([fx.lit1_inst, fx.lit2])
+        for strict_optional in (False, True):
+            with state.strict_optional_set(strict_optional):
+                assert_equal(
+                    narrow_declared_type(declared, narrowed), UnionType([fx.a, fx.lit1, fx.lit2])
+                )
 
     def test_class_subtyping(self) -> None:
         self.assert_meet(self.fx.a, self.fx.o, self.fx.a)
