@@ -1,5 +1,49 @@
 -- Type checking of union types
 
+[case testUnionOfManyNominalClassesNarrowing]
+from typing import Union
+
+class Event:
+    value: int
+
+class Event0(Event): pass
+class Event1(Event): pass
+class Event2(Event): pass
+class Event3(Event): pass
+class Event4(Event): pass
+class Event5(Event): pass
+class Event6(Event): pass
+class Event7(Event): pass
+class Event8(Event): pass
+class Event9(Event): pass
+class Event10(Event): pass
+class Event11(Event): pass
+
+EventType = Union[
+    Event0, Event1, Event2, Event3, Event4, Event5,
+    Event6, Event7, Event8, Event9, Event10, Event11,
+]
+RemainingEvents = Union[
+    Event2, Event3, Event4, Event5, Event6,
+    Event7, Event8, Event9, Event10, Event11,
+]
+
+def handle(event: EventType) -> int:
+    if isinstance(event, Event0):
+        reveal_type(event)  # N: Revealed type is "__main__.Event0"
+        return event.value
+    if isinstance(event, Event1):
+        reveal_type(event)  # N: Revealed type is "__main__.Event1"
+        return event.value
+    remaining: RemainingEvents = event
+    if remaining:
+        return remaining.value
+    return 0
+
+def widen(event: RemainingEvents) -> EventType:
+    return event
+[builtins fixtures/isinstance.pyi]
+
 [case testUnion1]
 from typing import Union
 def f(x: Union[int, str]) -> None:
