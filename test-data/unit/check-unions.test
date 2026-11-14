@@ -1,6 +1,8 @@
 -- Type checking of union types
 
 [case testUnionOfManyNominalClassesNarrowing]
+# Keep this case large enough to expose quadratic union narrowing.
+# To time it, run with -n0 --durations=1 -k testUnionOfManyNominalClassesNarrowing.
 from typing import Union
 
 class Event:
@@ -18,14 +20,357 @@ class Event8(Event): pass
 class Event9(Event): pass
 class Event10(Event): pass
 class Event11(Event): pass
+class Event12(Event): pass
+class Event13(Event): pass
+class Event14(Event): pass
+class Event15(Event): pass
+class Event16(Event): pass
+class Event17(Event): pass
+class Event18(Event): pass
+class Event19(Event): pass
+class Event20(Event): pass
+class Event21(Event): pass
+class Event22(Event): pass
+class Event23(Event): pass
+class Event24(Event): pass
+class Event25(Event): pass
+class Event26(Event): pass
+class Event27(Event): pass
+class Event28(Event): pass
+class Event29(Event): pass
+class Event30(Event): pass
+class Event31(Event): pass
+class Event32(Event): pass
+class Event33(Event): pass
+class Event34(Event): pass
+class Event35(Event): pass
+class Event36(Event): pass
+class Event37(Event): pass
+class Event38(Event): pass
+class Event39(Event): pass
+class Event40(Event): pass
+class Event41(Event): pass
+class Event42(Event): pass
+class Event43(Event): pass
+class Event44(Event): pass
+class Event45(Event): pass
+class Event46(Event): pass
+class Event47(Event): pass
+class Event48(Event): pass
+class Event49(Event): pass
+class Event50(Event): pass
+class Event51(Event): pass
+class Event52(Event): pass
+class Event53(Event): pass
+class Event54(Event): pass
+class Event55(Event): pass
+class Event56(Event): pass
+class Event57(Event): pass
+class Event58(Event): pass
+class Event59(Event): pass
+class Event60(Event): pass
+class Event61(Event): pass
+class Event62(Event): pass
+class Event63(Event): pass
+class Event64(Event): pass
+class Event65(Event): pass
+class Event66(Event): pass
+class Event67(Event): pass
+class Event68(Event): pass
+class Event69(Event): pass
+class Event70(Event): pass
+class Event71(Event): pass
+class Event72(Event): pass
+class Event73(Event): pass
+class Event74(Event): pass
+class Event75(Event): pass
+class Event76(Event): pass
+class Event77(Event): pass
+class Event78(Event): pass
+class Event79(Event): pass
+class Event80(Event): pass
+class Event81(Event): pass
+class Event82(Event): pass
+class Event83(Event): pass
+class Event84(Event): pass
+class Event85(Event): pass
+class Event86(Event): pass
+class Event87(Event): pass
+class Event88(Event): pass
+class Event89(Event): pass
+class Event90(Event): pass
+class Event91(Event): pass
+class Event92(Event): pass
+class Event93(Event): pass
+class Event94(Event): pass
+class Event95(Event): pass
+class Event96(Event): pass
+class Event97(Event): pass
+class Event98(Event): pass
+class Event99(Event): pass
+class Event100(Event): pass
+class Event101(Event): pass
+class Event102(Event): pass
+class Event103(Event): pass
+class Event104(Event): pass
+class Event105(Event): pass
+class Event106(Event): pass
+class Event107(Event): pass
+class Event108(Event): pass
+class Event109(Event): pass
+class Event110(Event): pass
+class Event111(Event): pass
+class Event112(Event): pass
+class Event113(Event): pass
+class Event114(Event): pass
+class Event115(Event): pass
+class Event116(Event): pass
+class Event117(Event): pass
+class Event118(Event): pass
+class Event119(Event): pass
+class Event120(Event): pass
+class Event121(Event): pass
+class Event122(Event): pass
+class Event123(Event): pass
+class Event124(Event): pass
+class Event125(Event): pass
+class Event126(Event): pass
+class Event127(Event): pass
+class Event128(Event): pass
+class Event129(Event): pass
+class Event130(Event): pass
+class Event131(Event): pass
+class Event132(Event): pass
+class Event133(Event): pass
+class Event134(Event): pass
+class Event135(Event): pass
+class Event136(Event): pass
+class Event137(Event): pass
+class Event138(Event): pass
+class Event139(Event): pass
+class Event140(Event): pass
+class Event141(Event): pass
+class Event142(Event): pass
+class Event143(Event): pass
+class Event144(Event): pass
+class Event145(Event): pass
+class Event146(Event): pass
+class Event147(Event): pass
+class Event148(Event): pass
+class Event149(Event): pass
+class Event150(Event): pass
+class Event151(Event): pass
+class Event152(Event): pass
+class Event153(Event): pass
+class Event154(Event): pass
+class Event155(Event): pass
+class Event156(Event): pass
+class Event157(Event): pass
+class Event158(Event): pass
+class Event159(Event): pass
+class Event160(Event): pass
+class Event161(Event): pass
+class Event162(Event): pass
+class Event163(Event): pass
+class Event164(Event): pass
+class Event165(Event): pass
+class Event166(Event): pass
+class Event167(Event): pass
+class Event168(Event): pass
+class Event169(Event): pass
+class Event170(Event): pass
+class Event171(Event): pass
+class Event172(Event): pass
+class Event173(Event): pass
+class Event174(Event): pass
+class Event175(Event): pass
+class Event176(Event): pass
+class Event177(Event): pass
+class Event178(Event): pass
+class Event179(Event): pass
+class Event180(Event): pass
+class Event181(Event): pass
+class Event182(Event): pass
+class Event183(Event): pass
+class Event184(Event): pass
+class Event185(Event): pass
+class Event186(Event): pass
+class Event187(Event): pass
+class Event188(Event): pass
+class Event189(Event): pass
+class Event190(Event): pass
+class Event191(Event): pass
+class Event192(Event): pass
+class Event193(Event): pass
+class Event194(Event): pass
+class Event195(Event): pass
+class Event196(Event): pass
+class Event197(Event): pass
+class Event198(Event): pass
+class Event199(Event): pass
+class Event200(Event): pass
+class Event201(Event): pass
+class Event202(Event): pass
+class Event203(Event): pass
+class Event204(Event): pass
+class Event205(Event): pass
+class Event206(Event): pass
+class Event207(Event): pass
+class Event208(Event): pass
+class Event209(Event): pass
+class Event210(Event): pass
+class Event211(Event): pass
+class Event212(Event): pass
+class Event213(Event): pass
+class Event214(Event): pass
+class Event215(Event): pass
+class Event216(Event): pass
+class Event217(Event): pass
+class Event218(Event): pass
+class Event219(Event): pass
+class Event220(Event): pass
+class Event221(Event): pass
+class Event222(Event): pass
+class Event223(Event): pass
+class Event224(Event): pass
+class Event225(Event): pass
+class Event226(Event): pass
+class Event227(Event): pass
+class Event228(Event): pass
+class Event229(Event): pass
+class Event230(Event): pass
+class Event231(Event): pass
+class Event232(Event): pass
+class Event233(Event): pass
+class Event234(Event): pass
+class Event235(Event): pass
+class Event236(Event): pass
+class Event237(Event): pass
+class Event238(Event): pass
+class Event239(Event): pass
+class Event240(Event): pass
+class Event241(Event): pass
+class Event242(Event): pass
+class Event243(Event): pass
+class Event244(Event): pass
+class Event245(Event): pass
+class Event246(Event): pass
+class Event247(Event): pass
+class Event248(Event): pass
+class Event249(Event): pass
+class Event250(Event): pass
+class Event251(Event): pass
+class Event252(Event): pass
+class Event253(Event): pass
+class Event254(Event): pass
+class Event255(Event): pass
+class Event256(Event): pass
+class Event257(Event): pass
+class Event258(Event): pass
+class Event259(Event): pass
+class Event260(Event): pass
+class Event261(Event): pass
+class Event262(Event): pass
+class Event263(Event): pass
+class Event264(Event): pass
+class Event265(Event): pass
+class Event266(Event): pass
+class Event267(Event): pass
+class Event268(Event): pass
+class Event269(Event): pass
+class Event270(Event): pass
+class Event271(Event): pass
+class Event272(Event): pass
+class Event273(Event): pass
+class Event274(Event): pass
+class Event275(Event): pass
+class Event276(Event): pass
+class Event277(Event): pass
+class Event278(Event): pass
+class Event279(Event): pass
+class Event280(Event): pass
+class Event281(Event): pass
+class Event282(Event): pass
+class Event283(Event): pass
+class Event284(Event): pass
+class Event285(Event): pass
+class Event286(Event): pass
+class Event287(Event): pass
+class Event288(Event): pass
+class Event289(Event): pass
+class Event290(Event): pass
+class Event291(Event): pass
+class Event292(Event): pass
+class Event293(Event): pass
+class Event294(Event): pass
+class Event295(Event): pass
+class Event296(Event): pass
+class Event297(Event): pass
+class Event298(Event): pass
+class Event299(Event): pass
 
 EventType = Union[
-    Event0, Event1, Event2, Event3, Event4, Event5,
-    Event6, Event7, Event8, Event9, Event10, Event11,
+    Event0, Event1, Event2, Event3, Event4, Event5, Event6, Event7, Event8, Event9,
+    Event10, Event11, Event12, Event13, Event14, Event15, Event16, Event17, Event18, Event19,
+    Event20, Event21, Event22, Event23, Event24, Event25, Event26, Event27, Event28, Event29,
+    Event30, Event31, Event32, Event33, Event34, Event35, Event36, Event37, Event38, Event39,
+    Event40, Event41, Event42, Event43, Event44, Event45, Event46, Event47, Event48, Event49,
+    Event50, Event51, Event52, Event53, Event54, Event55, Event56, Event57, Event58, Event59,
+    Event60, Event61, Event62, Event63, Event64, Event65, Event66, Event67, Event68, Event69,
+    Event70, Event71, Event72, Event73, Event74, Event75, Event76, Event77, Event78, Event79,
+    Event80, Event81, Event82, Event83, Event84, Event85, Event86, Event87, Event88, Event89,
+    Event90, Event91, Event92, Event93, Event94, Event95, Event96, Event97, Event98, Event99,
+    Event100, Event101, Event102, Event103, Event104, Event105, Event106, Event107, Event108, Event109,
+    Event110, Event111, Event112, Event113, Event114, Event115, Event116, Event117, Event118, Event119,
+    Event120, Event121, Event122, Event123, Event124, Event125, Event126, Event127, Event128, Event129,
+    Event130, Event131, Event132, Event133, Event134, Event135, Event136, Event137, Event138, Event139,
+    Event140, Event141, Event142, Event143, Event144, Event145, Event146, Event147, Event148, Event149,
+    Event150, Event151, Event152, Event153, Event154, Event155, Event156, Event157, Event158, Event159,
+    Event160, Event161, Event162, Event163, Event164, Event165, Event166, Event167, Event168, Event169,
+    Event170, Event171, Event172, Event173, Event174, Event175, Event176, Event177, Event178, Event179,
+    Event180, Event181, Event182, Event183, Event184, Event185, Event186, Event187, Event188, Event189,
+    Event190, Event191, Event192, Event193, Event194, Event195, Event196, Event197, Event198, Event199,
+    Event200, Event201, Event202, Event203, Event204, Event205, Event206, Event207, Event208, Event209,
+    Event210, Event211, Event212, Event213, Event214, Event215, Event216, Event217, Event218, Event219,
+    Event220, Event221, Event222, Event223, Event224, Event225, Event226, Event227, Event228, Event229,
+    Event230, Event231, Event232, Event233, Event234, Event235, Event236, Event237, Event238, Event239,
+    Event240, Event241, Event242, Event243, Event244, Event245, Event246, Event247, Event248, Event249,
+    Event250, Event251, Event252, Event253, Event254, Event255, Event256, Event257, Event258, Event259,
+    Event260, Event261, Event262, Event263, Event264, Event265, Event266, Event267, Event268, Event269,
+    Event270, Event271, Event272, Event273, Event274, Event275, Event276, Event277, Event278, Event279,
+    Event280, Event281, Event282, Event283, Event284, Event285, Event286, Event287, Event288, Event289,
+    Event290, Event291, Event292, Event293, Event294, Event295, Event296, Event297, Event298, Event299,
 ]
 RemainingEvents = Union[
-    Event2, Event3, Event4, Event5, Event6,
-    Event7, Event8, Event9, Event10, Event11,
+    Event10, Event11, Event12, Event13, Event14, Event15, Event16, Event17, Event18, Event19,
+    Event20, Event21, Event22, Event23, Event24, Event25, Event26, Event27, Event28, Event29,
+    Event30, Event31, Event32, Event33, Event34, Event35, Event36, Event37, Event38, Event39,
+    Event40, Event41, Event42, Event43, Event44, Event45, Event46, Event47, Event48, Event49,
+    Event50, Event51, Event52, Event53, Event54, Event55, Event56, Event57, Event58, Event59,
+    Event60, Event61, Event62, Event63, Event64, Event65, Event66, Event67, Event68, Event69,
+    Event70, Event71, Event72, Event73, Event74, Event75, Event76, Event77, Event78, Event79,
+    Event80, Event81, Event82, Event83, Event84, Event85, Event86, Event87, Event88, Event89,
+    Event90, Event91, Event92, Event93, Event94, Event95, Event96, Event97, Event98, Event99,
+    Event100, Event101, Event102, Event103, Event104, Event105, Event106, Event107, Event108, Event109,
+    Event110, Event111, Event112, Event113, Event114, Event115, Event116, Event117, Event118, Event119,
+    Event120, Event121, Event122, Event123, Event124, Event125, Event126, Event127, Event128, Event129,
+    Event130, Event131, Event132, Event133, Event134, Event135, Event136, Event137, Event138, Event139,
+    Event140, Event141, Event142, Event143, Event144, Event145, Event146, Event147, Event148, Event149,
+    Event150, Event151, Event152, Event153, Event154, Event155, Event156, Event157, Event158, Event159,
+    Event160, Event161, Event162, Event163, Event164, Event165, Event166, Event167, Event168, Event169,
+    Event170, Event171, Event172, Event173, Event174, Event175, Event176, Event177, Event178, Event179,
+    Event180, Event181, Event182, Event183, Event184, Event185, Event186, Event187, Event188, Event189,
+    Event190, Event191, Event192, Event193, Event194, Event195, Event196, Event197, Event198, Event199,
+    Event200, Event201, Event202, Event203, Event204, Event205, Event206, Event207, Event208, Event209,
+    Event210, Event211, Event212, Event213, Event214, Event215, Event216, Event217, Event218, Event219,
+    Event220, Event221, Event222, Event223, Event224, Event225, Event226, Event227, Event228, Event229,
+    Event230, Event231, Event232, Event233, Event234, Event235, Event236, Event237, Event238, Event239,
+    Event240, Event241, Event242, Event243, Event244, Event245, Event246, Event247, Event248, Event249,
+    Event250, Event251, Event252, Event253, Event254, Event255, Event256, Event257, Event258, Event259,
+    Event260, Event261, Event262, Event263, Event264, Event265, Event266, Event267, Event268, Event269,
+    Event270, Event271, Event272, Event273, Event274, Event275, Event276, Event277, Event278, Event279,
+    Event280, Event281, Event282, Event283, Event284, Event285, Event286, Event287, Event288, Event289,
+    Event290, Event291, Event292, Event293, Event294, Event295, Event296, Event297, Event298, Event299,
 ]
 
 def handle(event: EventType) -> int:
@@ -34,6 +379,30 @@ def handle(event: EventType) -> int:
         return event.value
     if isinstance(event, Event1):
         reveal_type(event)  # N: Revealed type is "__main__.Event1"
+        return event.value
+    if isinstance(event, Event2):
+        reveal_type(event)  # N: Revealed type is "__main__.Event2"
+        return event.value
+    if isinstance(event, Event3):
+        reveal_type(event)  # N: Revealed type is "__main__.Event3"
+        return event.value
+    if isinstance(event, Event4):
+        reveal_type(event)  # N: Revealed type is "__main__.Event4"
+        return event.value
+    if isinstance(event, Event5):
+        reveal_type(event)  # N: Revealed type is "__main__.Event5"
+        return event.value
+    if isinstance(event, Event6):
+        reveal_type(event)  # N: Revealed type is "__main__.Event6"
+        return event.value
+    if isinstance(event, Event7):
+        reveal_type(event)  # N: Revealed type is "__main__.Event7"
+        return event.value
+    if isinstance(event, Event8):
+        reveal_type(event)  # N: Revealed type is "__main__.Event8"
+        return event.value
+    if isinstance(event, Event9):
+        reveal_type(event)  # N: Revealed type is "__main__.Event9"
         return event.value
     remaining: RemainingEvents = event
     if remaining:
