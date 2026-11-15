@@ -40,6 +40,84 @@
 -- skip caching test cases to speed up tests, if the caching variant is not useful.
 -- The caching test case variants get an implicit _cached suffix.
 
+[case testUnionReductionCacheAfterBaseClassChange]
+import use
+[file classes.py]
+class T0: pass
+class T1(T0): pass
+class T2: pass
+[file classes.py.2]
+class T0: pass
+class T1: pass
+class T2: pass
+[file classes.py.3]
+class T0: pass
+class T1(T0): pass
+class T2: pass
+[file use.py]
+from typing import Union
+from typing_extensions import assert_type
+from classes import T0, T1, T2
+
+def combine(x: Union[T0, T1, T2], flag: bool) -> Union[T0, T1, T2]:
+    result = x if flag else x
+    assert_type(result, Union[T0, T1, T2])
+    return result
+[builtins fixtures/fine_grained.pyi]
+[out]
+==
+==
+
+[case testUnionReductionCacheAfterNestedProtocolChange]
+import use
+[file classes.py]
+from typing import Generic, TypeVar
+from typing_extensions import Protocol
+T = TypeVar("T", contravariant=True)
+class T0(Generic[T]): pass
+class P(Protocol):
+    value: int
+class T1(T0[P]): pass
+class T2:
+    value: int
+class T3: pass
+[file classes.py.2]
+from typing import Generic, TypeVar
+from typing_extensions import Protocol
+T = TypeVar("T", contravariant=True)
+class T0(Generic[T]): pass
+class P(Protocol):
+    value: int
+class T1(T0[P]): pass
+class T2:
+    value: str
+class T3: pass
+[file classes.py.3]
+from typing import Generic, TypeVar
+from typing_extensions import Protocol
+T = TypeVar("T", contravariant=True)
+class T0(Generic[T]): pass
+class P(Protocol):
+    value: int
+class T1(T0[P]): pass
+class T2:
+    value: int
+class T3: pass
+[file use.py]
+from typing import Union
+from classes import T0, T1, T2, T3
+def combine(left: Union[T0[T2], T1], right: T3, flag: bool) -> None:
+    result = left if flag else right
+    result = left if flag else right
+    reveal_type(result)
+[builtins fixtures/fine_grained.pyi]
+[out]
+use.py:6: note: Revealed type is "classes.T0[classes.T2] | classes.T3"
+==
+use.py:6: note: Revealed type is "classes.T0[classes.T2] | classes.T1 | classes.T3"
+==
+use.py:6: note: Revealed type is "classes.T0[classes.T2] | classes.T3"
+
 [case testReprocessFunction]
 import m
 def g() -> int:

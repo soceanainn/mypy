@@ -6,7 +6,7 @@ and potentially other mutable TypeInfo state. This module contains mutable globa
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Final, TypeAlias as _TypeAlias
+from typing import Final, NamedTuple, TypeAlias as _TypeAlias
 
 from mypy.nodes import VARIANCE_NOT_READY, TypeInfo
 from mypy.server.trigger import make_trigger
@@ -22,6 +22,9 @@ from mypy.types import (
 
 MAX_NEGATIVE_CACHE_TYPES: Final = 1000
 MAX_NEGATIVE_CACHE_ENTRIES: Final = 10000
+# Count snapshotted types and variance entries, including nested arguments.
+MAX_UNION_REDUCTION_CACHE_ITEMS: Final = 10000
+MAX_UNION_REDUCTION_KEY_DEPTH: Final = 64
 
 BindSelfCacheKey = tuple[CallableType, Type, bool, bool]
 BindSelfCacheValue = tuple[CallableType, Sequence[TypeVarLikeType]]
@@ -38,6 +41,20 @@ SubtypeKind: _TypeAlias = tuple[bool, ...]
 # A cache that keeps track of whether the given TypeInfo is a part of a particular
 # subtype relationship
 SubtypeCache: _TypeAlias = dict[TypeInfo, dict[SubtypeKind, set[SubtypeRelationship]]]
+
+
+class UnionReductionItemKey(NamedTuple):
+    # Keep top-level truthiness separate so a widened survivor can still be
+    # matched to its original input. Nested truthiness remains part of shape.
+    shape: tuple[object, ...]
+    can_be_true: bool
+    can_be_false: bool
+
+
+# Strict optional mode, keep_erased, and ordered structural snapshots of input items.
+UnionReductionKey: _TypeAlias = tuple[bool, bool, tuple[UnionReductionItemKey, ...]]
+# Each survivor's original input position and whether its truthiness was widened.
+UnionReductionPlan: _TypeAlias = tuple[tuple[int, bool], ...]
 
 
 class TypeState:
@@ -60,6 +77,8 @@ class TypeState:
 
     # Same as above but for negative subtyping results.
     _negative_subtype_caches: Final[SubtypeCache]
+    _union_reduction_cache: Final[dict[UnionReductionKey, UnionReductionPlan]]
+    _union_reduction_cache_size: int
 
     # A dedicated lightweight cache for bind_self(), which may be slow because of type
     # inference in some scenarios involving protocols with non-trivial self-types.
@@ -131,6 +150,8 @@ class TypeState:
     def __init__(self) -> None:
         self._subtype_caches = {}
         self._negative_subtype_caches = {}
+        self._union_reduction_cache = {}
+        self._union_reduction_cache_size = 0
         self.proto_deps = {}
         self._attempted_protocols = {}
         self._checked_against_members = {}
@@ -169,13 +190,36 @@ class TypeState:
         """Completely reset all known subtype caches."""
         self._subtype_caches.clear()
         self._negative_subtype_caches.clear()
+        self.reset_union_reduction_cache()
 
     def reset_subtype_caches_for(self, info: TypeInfo) -> None:
         """Reset subtype caches (if any) for a given supertype TypeInfo."""
+        # Plans can involve this class or any of its subclasses. Invalidate
+        # conservatively rather than maintaining another dependency index.
+        self.reset_union_reduction_cache()
         if info in self._subtype_caches:
             self._subtype_caches[info].clear()
         if info in self._negative_subtype_caches:
             self._negative_subtype_caches[info].clear()
+
+    def reset_union_reduction_cache(self) -> None:
+        self._union_reduction_cache.clear()
+        self._union_reduction_cache_size = 0
+
+    def get_union_reduction_plan(self, key: UnionReductionKey) -> UnionReductionPlan | None:
+        return self._union_reduction_cache.get(key)
+
+    def record_union_reduction_plan(
+        self, key: UnionReductionKey, plan: UnionReductionPlan, size: int
+    ) -> None:
+        if key in self._union_reduction_cache:
+            return
+        if size > MAX_UNION_REDUCTION_CACHE_ITEMS:
+            return
+        if self._union_reduction_cache_size + size > MAX_UNION_REDUCTION_CACHE_ITEMS:
+            self.reset_union_reduction_cache()
+        self._union_reduction_cache[key] = plan
+        self._union_reduction_cache_size += size
 
     def reset_all_subtype_caches_for(self, info: TypeInfo) -> None:
         """Reset subtype caches (if any) for a given supertype TypeInfo and its MRO."""

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+from itertools import permutations, product
 from unittest import TestCase, skipUnless
 
 from librt.internal import ReadBuffer, WriteBuffer
 
 from mypy.cache import read_tag
+from mypy.copytype import copy_type
 from mypy.erasetype import erase_type, remove_instance_last_known_values
 from mypy.indirection import TypeIndirectionVisitor
 from mypy.join import join_types
@@ -21,6 +23,7 @@ from mypy.nodes import (
     CONTRAVARIANT,
     COVARIANT,
     INVARIANT,
+    VARIANCE_NOT_READY,
     ArgKind,
     CallExpr,
     Expression,
@@ -31,7 +34,12 @@ from mypy.state import state
 from mypy.subtypes import is_more_precise, is_proper_subtype, is_same_type, is_subtype
 from mypy.test.helpers import Suite, assert_equal, assert_type, skip
 from mypy.test.typefixture import InterfaceTypeFixture, TypeFixture
-from mypy.typeops import false_only, make_simplified_union, true_only
+from mypy.typeops import (
+    _remove_redundant_union_items,
+    false_only,
+    make_simplified_union,
+    true_only,
+)
 from mypy.types import (
     LITERAL_TYPE,
     AnyType,
@@ -55,6 +63,13 @@ from mypy.types import (
     UnpackType,
     get_proper_type,
     has_recursive_types,
+)
+from mypy.typestate import (
+    MAX_UNION_REDUCTION_CACHE_ITEMS,
+    MAX_UNION_REDUCTION_KEY_DEPTH,
+    TypeState,
+    UnionReductionItemKey,
+    type_state,
 )
 
 # Solving the import cycle:
@@ -730,6 +745,244 @@ class TypeOpsSuite(Suite):
             name=None,
             variables=tv,
         )
+
+
+class UnionReductionCacheSuite(Suite):
+    def setUp(self) -> None:
+        self.fx = TypeFixture()
+        type_state.reset_all_subtype_caches()
+        self.addCleanup(type_state.reset_all_subtype_caches)
+
+    def test_reuses_plan_with_current_objects_and_locations(self) -> None:
+        fx = self.fx
+        infos = [fx.make_type_info(f"T{i}") for i in range(3)]
+        first = make_simplified_union([Instance(info, [], line=10) for info in infos])
+        assert isinstance(first, UnionType)
+        plan = next(iter(type_state._union_reduction_cache.values()))
+        first.items.pop()
+        first.items[0].can_be_false = False
+
+        items = [Instance(info, [], line=20, column=4) for info in infos]
+        second = make_simplified_union(items)
+        assert isinstance(second, UnionType)
+        assert next(iter(type_state._union_reduction_cache.values())) is plan
+        assert_equal(len(second.items), 3)
+        for original, result in zip(items, second.items):
+            assert result is original
+            assert_equal(result.line, 20)
+            assert_equal(result.column, 4)
+            assert result.can_be_false
+
+    def test_truthiness_is_part_of_key(self) -> None:
+        fx = self.fx
+        with state.strict_optional_set(True):
+            widened = make_simplified_union([true_only(fx.a), fx.b, fx.d])
+            restricted = make_simplified_union([true_only(fx.a), true_only(fx.b), fx.d])
+            assert isinstance(widened, UnionType)
+            assert isinstance(restricted, UnionType)
+            assert widened.items[0].can_be_false
+            assert not restricted.items[0].can_be_false
+            assert_equal(len(type_state._union_reduction_cache), 2)
+
+    def test_widening_copies_current_input(self) -> None:
+        fx = self.fx
+        with state.strict_optional_set(True):
+            first = make_simplified_union([true_only(fx.a), fx.b, fx.d])
+            assert isinstance(first, UnionType)
+            first.items[0].line = 99
+            first.items[0].can_be_false = False
+
+            current = true_only(Instance(fx.ai, [], line=20, column=4))
+            second = make_simplified_union([current, Instance(fx.bi, []), Instance(fx.di, [])])
+            assert isinstance(second, UnionType)
+            assert second.items[0] is not current
+            assert second.items[0].can_be_false
+            assert not current.can_be_false
+            assert_equal(second.items[0].line, 20)
+            assert_equal(second.items[0].column, 4)
+
+    def test_preserves_member_order_and_first_supertype(self) -> None:
+        fx = self.fx
+        with state.strict_optional_set(True):
+            for first, second in ((fx.f, fx.f2), (fx.f2, fx.f)):
+                for _ in range(2):
+                    result = make_simplified_union([true_only(first), true_only(second), fx.e2])
+                    assert isinstance(result, UnionType)
+                    assert_equal(result.items, [first, second])
+                    assert result.items[0].can_be_false
+                    assert not result.items[1].can_be_false
+
+    def test_strict_optional_is_part_of_key(self) -> None:
+        fx = self.fx
+        items = [fx.a, fx.d, fx.nonet]
+        for strict_optional in (False, True, False, True):
+            with state.strict_optional_set(strict_optional):
+                result = make_simplified_union(items)
+                assert isinstance(result, UnionType)
+                assert_equal(len(result.items), 3 if strict_optional else 2)
+
+    def test_plans_match_original_simplifier(self) -> None:
+        fx = self.fx
+        # Include duplicate classes, subtypes, and multiple inheritance, in
+        # both passes of the original simplifier and with restricted truthiness.
+        with state.strict_optional_set(True):
+            for infos in ((fx.ai, fx.bi, fx.ai, fx.di), (fx.fi, fx.f2i, fx.e2i, fx.di)):
+                for ordered in permutations(infos):
+                    for restrictions in product((None, true_only, false_only), repeat=4):
+                        items: list[Type] = [Instance(info, []) for info in ordered]
+                        items = [f(t) if f else t for f, t in zip(restrictions, items)]
+                        make_simplified_union(items)  # Populate the plan.
+                        current = [copy_type(get_proper_type(t)) for t in items]
+                        for line, item in enumerate(current):
+                            item.line = line
+                        expected = _remove_redundant_union_items(list(current), False)
+                        result = make_simplified_union(current)
+                        actual = result.items if isinstance(result, UnionType) else [result]
+                        assert_equal(len(actual), len(expected))
+                        for cached, uncached in zip(actual, expected):
+                            assert_equal(cached, uncached)
+                            assert_equal(cached.line, uncached.line)
+                            assert_equal(cached.can_be_true, uncached.can_be_true)
+                            assert_equal(cached.can_be_false, uncached.can_be_false)
+                            source = current[uncached.line]
+                            assert_equal(cached is source, uncached is source)
+
+    def test_bypasses_context_sensitive_types(self) -> None:
+        fx = self.fx
+        info = fx.make_type_info("T")
+        info.is_protocol = True
+        for item in (
+            fx.a.copy_with_extra_attr("x", fx.a),
+            Instance(info, []),
+            fx.non_rec_alias(fx.a),
+            fx.t,
+        ):
+            make_simplified_union([fx.d, fx.e, item])
+            assert not type_state._union_reduction_cache
+
+    def test_generic_arguments_and_literal_values(self) -> None:
+        fx = self.fx
+        with state.strict_optional_set(True):
+            for _ in range(2):
+                generic = make_simplified_union([fx.ga, fx.gb, fx.gd])
+                assert_equal(generic, UnionType([fx.ga, fx.gd]))
+                literals = make_simplified_union([fx.lit1, fx.lit2, fx.d])
+                assert_equal(literals, UnionType([fx.lit1, fx.lit2, fx.d]))
+                known = make_simplified_union([fx.lit1_inst, fx.lit2_inst, fx.d])
+                assert_equal(known, UnionType([fx.lit1_inst, fx.lit2_inst, fx.d]))
+            assert_equal(len(type_state._union_reduction_cache), 3)
+
+    def test_ambiguous_bottom_arguments(self) -> None:
+        fx = TypeFixture(INVARIANT)
+        with state.strict_optional_set(True):
+            for ambiguous in (True, False, True, False):
+                type_state._subtype_caches.clear()
+                type_state._negative_subtype_caches.clear()
+                bottom = UninhabitedType()
+                bottom.ambiguous = ambiguous
+                item = Instance(fx.gi, [bottom])
+                result = make_simplified_union([item, fx.ga, fx.d])
+                expected = [fx.ga, fx.d] if ambiguous else [item, fx.ga, fx.d]
+                assert_equal(result, UnionType(expected))
+
+    def test_literal_contraction_uses_current_fallback(self) -> None:
+        fx = self.fx
+        for contract in (False, True, False, True):
+            fallback = Instance(fx.bool_type_info, [], line=20)
+            left = LiteralType(True, fallback, line=30)
+            right = LiteralType(False, fallback, line=40)
+            result = make_simplified_union([left, right, fx.d], contract_literals=contract)
+            assert isinstance(result, UnionType)
+            expected: list[Type] = [fallback, fx.d] if contract else [left, right, fx.d]
+            for actual, current in zip(result.items, expected):
+                assert actual is current
+            assert_equal(len(result.items), len(expected))
+        assert_equal(len(type_state._union_reduction_cache), 1)
+
+    def test_generic_arguments_use_current_metadata(self) -> None:
+        fx = self.fx
+        for provenance in (TypeOfAny.explicit, TypeOfAny.unannotated):
+            arg = AnyType(provenance, line=20)
+            generic = Instance(fx.gi, [arg], line=30)
+            result = make_simplified_union([generic, fx.ga, fx.d])
+            assert isinstance(result, UnionType)
+            assert result.items[0] is generic
+            assert generic.args[0] is arg
+        assert_equal(len(type_state._union_reduction_cache), 1)
+
+    def test_variance_is_part_of_key(self) -> None:
+        fx = TypeFixture(INVARIANT)
+        tv = fx.gi.defn.type_vars[0]
+        assert isinstance(tv, TypeVarType)
+        for variance in (INVARIANT, COVARIANT, INVARIANT, COVARIANT):
+            tv.variance = variance
+            # Leave reduction plans warm while removing pairwise subtype caches.
+            type_state._subtype_caches.clear()
+            type_state._negative_subtype_caches.clear()
+            result = make_simplified_union([fx.ga, fx.gb, fx.gd])
+            assert isinstance(result, UnionType)
+            assert_equal(len(result.items), 3 if variance == INVARIANT else 2)
+        type_state.reset_all_subtype_caches()
+        tv.variance = VARIANCE_NOT_READY
+        make_simplified_union([fx.ga, fx.gb, fx.gd])
+        assert not type_state._union_reduction_cache
+
+    def test_bounds_nested_keys(self) -> None:
+        fx = self.fx
+        wide = Instance(fx.gi, [fx.a] * MAX_UNION_REDUCTION_CACHE_ITEMS)
+        deep = fx.a
+        for _ in range(MAX_UNION_REDUCTION_KEY_DEPTH):
+            deep = Instance(fx.gi, [deep])
+        for item in (wide, deep):
+            make_simplified_union([fx.d, fx.e, item])
+            assert not type_state._union_reduction_cache
+
+    def test_bypasses_recursive_assumptions(self) -> None:
+        fx = self.fx
+        items = [fx.a, fx.d, fx.e]
+        normal = make_simplified_union(items)
+        assert isinstance(normal, UnionType)
+        assumptions = type_state.get_assumptions(is_proper=True)
+        assumptions.append((fx.a, fx.d))
+        try:
+            assumed = make_simplified_union(items)
+            assert isinstance(assumed, UnionType)
+            assert_equal(assumed.items, [fx.d, fx.e])
+        finally:
+            assumptions.pop()
+        assert_equal(make_simplified_union(items), normal)
+
+    def test_class_changes_invalidate_plans(self) -> None:
+        fx = self.fx
+        items = [fx.b, fx.c, fx.d]
+        original = make_simplified_union(items)
+        assert isinstance(original, UnionType)
+        assert_equal(len(original.items), 3)
+        fx.ci.mro = [fx.ci, fx.bi, fx.ai, fx.oi]
+        fx.ci.bases = [fx.b]
+        type_state.reset_subtype_caches_for(fx.bi)
+        assert not type_state._union_reduction_cache
+        changed = make_simplified_union(items)
+        assert isinstance(changed, UnionType)
+        assert_equal(changed.items, [fx.b, fx.d])
+
+    def test_bounds_total_cached_input_size(self) -> None:
+        cache = TypeState()
+        item = UnionReductionItemKey((Instance, self.fx.ai, (), (), None), True, True)
+        plan = ((0, False),)
+        large = (True, False, (item,) * MAX_UNION_REDUCTION_CACHE_ITEMS)
+        small = (True, False, (item,) * 3)
+        oversized = (True, False, (item,) * (MAX_UNION_REDUCTION_CACHE_ITEMS + 1))
+        cache.record_union_reduction_plan(large, plan, MAX_UNION_REDUCTION_CACHE_ITEMS)
+        assert cache.get_union_reduction_plan(large) == plan
+        cache.record_union_reduction_plan(large, plan, MAX_UNION_REDUCTION_CACHE_ITEMS)
+        assert_equal(cache._union_reduction_cache_size, MAX_UNION_REDUCTION_CACHE_ITEMS)
+        cache.record_union_reduction_plan(small, plan, 3)
+        assert cache.get_union_reduction_plan(large) is None
+        assert cache.get_union_reduction_plan(small) == plan
+        cache.record_union_reduction_plan(oversized, plan, MAX_UNION_REDUCTION_CACHE_ITEMS + 1)
+        assert cache.get_union_reduction_plan(oversized) is None
+        assert cache.get_union_reduction_plan(small) == plan
 
 
 class JoinSuite(Suite):

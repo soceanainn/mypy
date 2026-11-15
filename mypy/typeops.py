@@ -23,6 +23,7 @@ from mypy.nodes import (
     ARG_STAR,
     ARG_STAR2,
     SYMBOL_FUNCBASE_TYPES,
+    VARIANCE_NOT_READY,
     Decorator,
     Expression,
     FuncBase,
@@ -72,7 +73,13 @@ from mypy.types import (
     instance_cache,
     remove_dups,
 )
-from mypy.typestate import BIND_SELF_CACHE_MAX_SIZE, type_state
+from mypy.typestate import (
+    BIND_SELF_CACHE_MAX_SIZE,
+    MAX_UNION_REDUCTION_CACHE_ITEMS,
+    MAX_UNION_REDUCTION_KEY_DEPTH,
+    UnionReductionItemKey,
+    type_state,
+)
 from mypy.typetraverser import TypeTraverserVisitor
 from mypy.typevars import fill_typevars
 
@@ -722,7 +729,11 @@ def make_simplified_union(
         return get_proper_type(items[0])
 
     # Step 3: remove redundant unions
-    simplified_set: Sequence[Type] = _remove_redundant_union_items(items, keep_erased)
+    simplified_set: Sequence[Type]
+    if len(items) > 2:
+        simplified_set = _remove_redundant_union_items_with_cache(items, keep_erased)
+    else:
+        simplified_set = _remove_redundant_union_items(items, keep_erased)
 
     # Step 4: If more than one literal exists in the union, try to simplify
     if (
@@ -769,6 +780,103 @@ def make_simplified_union(
             if erase_extra:
                 fallback.extra_attrs = None
 
+    return result
+
+
+def _union_reduction_item_key(
+    item: Type, budget: list[int], depth: int = 0
+) -> UnionReductionItemKey | None:
+    # Aliases, recursive types, and structural checks stay on the normal path.
+    # Bound both traversal work and the size of retained structural snapshots.
+    if (
+        not isinstance(item, ProperType)
+        or budget[0] <= 0
+        or depth >= MAX_UNION_REDUCTION_KEY_DEPTH
+    ):
+        return None
+    budget[0] -= 1
+    if isinstance(item, Instance):
+        if item.type.is_protocol or not item.type.mro or item.extra_attrs is not None:
+            return None
+        budget[0] -= len(item.type.defn.type_vars)
+        if budget[0] < 0:
+            return None
+        variances = tuple(
+            var.variance for var in item.type.defn.type_vars if isinstance(var, TypeVarType)
+        )
+        if VARIANCE_NOT_READY in variances:
+            return None
+        arg_keys = []
+        for arg in item.args:
+            arg_key = _union_reduction_item_key(arg, budget, depth + 1)
+            if arg_key is None:
+                return None
+            arg_keys.append(arg_key)
+        known_key = None
+        if item.last_known_value is not None:
+            known_key = _union_reduction_item_key(item.last_known_value, budget, depth + 1)
+            if known_key is None:
+                return None
+        shape: tuple[object, ...] = (Instance, item.type, variances, tuple(arg_keys), known_key)
+    elif isinstance(item, LiteralType):
+        fallback_key = _union_reduction_item_key(item.fallback, budget, depth + 1)
+        if fallback_key is None:
+            return None
+        shape = (LiteralType, item.value, fallback_key)
+    elif isinstance(item, UninhabitedType):
+        # Ambiguous bottom types are treated covariantly during inference,
+        # even in invariant generic arguments.
+        shape = (UninhabitedType, item.ambiguous)
+    elif isinstance(item, (NoneType, AnyType)):
+        shape = (type(item),)
+    else:
+        return None
+    return UnionReductionItemKey(shape, item.can_be_true, item.can_be_false)
+
+
+def _remove_redundant_union_items_with_cache(items: list[Type], keep_erased: bool) -> list[Type]:
+    """Cache survivor positions and truthiness widening, never mutable Type objects."""
+    # Recursive subtype assumptions must not escape into the cache.
+    if type_state.get_assumptions(is_proper=True):
+        return _remove_redundant_union_items(items, keep_erased)
+
+    item_keys = []
+    budget = [MAX_UNION_REDUCTION_CACHE_ITEMS]
+    for item in items:
+        item_key = _union_reduction_item_key(item, budget)
+        if item_key is None:
+            return _remove_redundant_union_items(items, keep_erased)
+        item_keys.append(item_key)
+
+    key = (state.strict_optional, keep_erased, tuple(item_keys))
+    plan = type_state.get_union_reduction_plan(key)
+    if plan is not None:
+        # Reuse the current call's objects and locations, never a cached Type.
+        return [
+            true_or_false(items[index]) if widened else items[index] for index, widened in plan
+        ]
+
+    result = _remove_redundant_union_items(items, keep_erased)
+    first_positions: dict[tuple[object, ...], int] = {}
+    for index, item_key in enumerate(item_keys):
+        first_positions.setdefault(item_key.shape, index)
+    entries: list[tuple[int, bool]] = []
+    result_budget = [MAX_UNION_REDUCTION_CACHE_ITEMS]
+    for item in result:
+        # Widening only changes top-level truthiness; all other fields still
+        # identify the current input occurrence that supplied this survivor.
+        result_key = _union_reduction_item_key(item, result_budget)
+        if result_key is None:
+            return result
+        position = first_positions.get(result_key.shape)
+        if position is None:
+            return result
+        original = items[position]
+        widened = item is not original
+        entries.append((position, widened))
+    type_state.record_union_reduction_plan(
+        key, tuple(entries), MAX_UNION_REDUCTION_CACHE_ITEMS - budget[0]
+    )
     return result
 
 
