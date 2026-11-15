@@ -636,6 +636,38 @@ class TypeOpsSuite(Suite):
         self.assert_simplified_union([fx.lit1, fx.lit2_inst], UnionType([fx.lit1, fx.lit2_inst]))
         self.assert_simplified_union([fx.lit1, fx.lit3_inst], UnionType([fx.lit1, fx.lit3_inst]))
 
+    def test_simplified_union_of_many_instances(self) -> None:
+        fx = self.fx
+        items: list[Type] = [Instance(fx.make_type_info(f"T{i}"), []) for i in range(1000)]
+        self.assert_simplified_union(items, UnionType(items))
+
+    def test_simplified_union_with_mixed_instances(self) -> None:
+        fx = self.fx
+        with state.strict_optional_set(True):
+            self.assert_simplified_union(
+                [fx.b, fx.anyt, fx.d, fx.a, fx.nonet, fx.c],
+                UnionType([fx.anyt, fx.d, fx.a, fx.nonet]),
+            )
+        self.assert_simplified_union([fx.ga, fx.gb, fx.gd], UnionType([fx.ga, fx.gb, fx.gd]))
+
+    def test_simplified_union_with_structural_supertype(self) -> None:
+        fx = self.fx
+        info = fx.make_type_info("T")
+        info.is_protocol = True
+        protocol = Instance(info, [])
+        self.assert_simplified_union([fx.a, protocol, fx.d], protocol)
+
+    def test_simplified_union_preserves_first_supertype_truthiness(self) -> None:
+        fx = self.fx
+        with state.strict_optional_set(True):
+            # E2 inherits F2 before F, but F appears first in this union.
+            # E2 must widen the truthiness of F, rather than F2.
+            result = make_simplified_union([true_only(fx.f), true_only(fx.f2), fx.e2])
+            assert isinstance(result, UnionType)
+            assert_equal(result.items, [fx.f, fx.f2])
+            assert result.items[0].can_be_false
+            assert not result.items[1].can_be_false
+
     def test_simplified_union_with_str_literals(self) -> None:
         fx = self.fx
 

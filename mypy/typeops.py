@@ -39,6 +39,7 @@ from mypy.types import (
     ELLIPSIS_TYPE_NAMES,
     NOT_IMPLEMENTED_TYPE_NAMES,
     SENTINEL_TYPE_NAMES,
+    TYPED_NAMEDTUPLE_NAMES,
     AnyType,
     CallableType,
     ExtraAttrs,
@@ -783,6 +784,10 @@ def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[
         # seen is a map from a type to its index in new_items
         seen: dict[ProperType, int] = {}
         unduplicated_literal_fallbacks: set[Instance] | None = None
+        # Nominal instance supertypes must occur in the subtype's MRO. Index
+        # them so unrelated classes don't require pairwise subtype checks.
+        instance_indices: dict[str, list[int]] = {}
+        other_indices: list[int] = []
         for ti in items:
             proper_ti = get_proper_type(ti)
 
@@ -808,7 +813,19 @@ def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[
                 pass
             else:
                 # If not, check if we've seen a supertype of this type
-                for j, tj in enumerate(new_items):
+                candidate_indices: Iterable[int]
+                if isinstance(proper_ti, Instance):
+                    indices = other_indices.copy()
+                    for base in proper_ti.type.mro:
+                        indices.extend(instance_indices.get(base.fullname, ()))
+                    # Preserve the original order: the first matching supertype
+                    # receives any truthiness information from the removed item.
+                    indices.sort()
+                    candidate_indices = indices
+                else:
+                    candidate_indices = range(len(new_items))
+                for j in candidate_indices:
+                    tj = new_items[j]
                     proper_tj = get_proper_type(tj)
                     # If tj is an Instance with a last_known_value, do not remove proper_ti
                     # (unless it's an instance with the same last_known_value)
@@ -836,7 +853,19 @@ def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[
                     new_items[duplicate_index] = true_or_false(orig_item)
             else:
                 # We have a non-duplicate item, add it to new_items
-                seen[proper_ti] = len(new_items)
+                index = len(new_items)
+                seen[proper_ti] = index
+                if (
+                    isinstance(proper_ti, Instance)
+                    and not proper_ti.type.is_protocol
+                    and proper_ti.type.fullname != "builtins.object"
+                    and proper_ti.type.fullname not in TYPED_NAMEDTUPLE_NAMES
+                ):
+                    instance_indices.setdefault(proper_ti.type.fullname, []).append(index)
+                else:
+                    # Protocols and NamedTuple have structural subtyping rules;
+                    # object is a supertype even when missing from an MRO.
+                    other_indices.append(index)
                 new_items.append(ti)
                 if isinstance(proper_ti, LiteralType):
                     if unduplicated_literal_fallbacks is None:
