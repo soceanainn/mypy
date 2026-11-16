@@ -8,6 +8,7 @@ from unittest import TestCase, skipUnless
 from librt.internal import ReadBuffer, WriteBuffer
 
 from mypy.cache import read_tag
+from mypy.checker import reduce_or_conditional_type_maps
 from mypy.erasetype import erase_type, remove_instance_last_known_values
 from mypy.indirection import TypeIndirectionVisitor
 from mypy.join import join_types
@@ -25,6 +26,7 @@ from mypy.nodes import (
     CallExpr,
     Expression,
     NameExpr,
+    Var,
 )
 from mypy.plugins.common import find_shallow_matching_overload_item
 from mypy.state import state
@@ -613,6 +615,16 @@ class TypeOpsSuite(Suite):
         self.assert_simplified_union(
             [fx.b, UnionType([fx.c, UnionType([fx.d])])], UnionType([fx.b, fx.c, fx.d])
         )
+
+    def test_accumulated_maps_preserve_newly_unreachable_branch(self) -> None:
+        x, y, z = [NameExpr(name) for name in ("x", "y", "z")]
+        for expr in (x, y, z):
+            expr.node = Var(expr.name)
+        bottom = UnionType([UninhabitedType(), UninhabitedType()])
+        result = reduce_or_conditional_type_maps(
+            [{x: bottom, y: self.fx.a}, {x: bottom, z: self.fx.a}, {y: self.fx.d, z: self.fx.d}]
+        )
+        assert_equal(result, {y: self.fx.d, z: self.fx.d})
 
     def test_simplified_union_with_literals(self) -> None:
         fx = self.fx

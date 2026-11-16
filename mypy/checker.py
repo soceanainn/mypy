@@ -9136,12 +9136,10 @@ def reduce_conditional_maps(
     elif len(type_maps) == 1:
         return type_maps[0]
     else:
-        final_if_map, final_else_map = type_maps[0]
-        for if_map, else_map in type_maps[1:]:
+        final_if_map, _ = type_maps[0]
+        for if_map, _ in type_maps[1:]:
             final_if_map = and_conditional_maps(final_if_map, if_map, use_meet=use_meet)
-            final_else_map = or_conditional_maps(final_else_map, else_map)
-
-        return final_if_map, final_else_map
+        return final_if_map, reduce_or_conditional_type_maps([m for _, m in type_maps])
 
 
 def reduce_or_conditional_type_maps(ms: list[TypeMap]) -> TypeMap:
@@ -9150,10 +9148,43 @@ def reduce_or_conditional_type_maps(ms: list[TypeMap]) -> TypeMap:
         return {}
     if len(ms) == 1:
         return ms[0]
-    result = ms[0]
-    for m in ms[1:]:
-        result = or_conditional_maps(result, m)
+    if len(ms) == 2:
+        return or_conditional_maps(ms[0], ms[1])
+
+    if any(_union_may_simplify_to_never(typ) for m in ms for typ in m.values()):
+        # A newly unreachable intermediate map is discarded by the next join,
+        # which can restore expression keys that batching would have removed.
+        result = ms[0]
+        for m in ms[1:]:
+            result = or_conditional_maps(result, m)
+        return result
+
+    first = ms[0]
+    others = [{literal_hash(expr): typ for expr, typ in m.items()} for m in ms[1:]]
+
+    result = {}
+    for expr, typ in first.items():
+        key = literal_hash(expr)
+        items = [typ]
+        for other in others:
+            other_type = other.get(key)
+            if other_type is None:
+                break
+            items.append(other_type)
+        else:
+            # Normalize once per shared expression instead of rebuilding a growing
+            # union after every alternative. Keep the first map's expression keys.
+            result[expr] = make_simplified_union(items)
     return result
+
+
+def _union_may_simplify_to_never(typ: Type) -> bool:
+    if isinstance(typ, TypeAliasType) and typ.is_recursive:
+        return True
+    proper = get_proper_type(typ)
+    if isinstance(proper, UnionType):
+        return all(_union_may_simplify_to_never(item) for item in proper.items)
+    return isinstance(proper, UninhabitedType)
 
 
 def reduce_and_conditional_type_maps(ms: list[TypeMap], *, use_meet: bool) -> TypeMap:

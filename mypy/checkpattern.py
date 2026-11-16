@@ -192,11 +192,7 @@ class PatternChecker(PatternVisitor[PatternType]):
 
         captures: dict[Expression, Type] = {}
         for capture_list in capture_types.values():
-            typ = UninhabitedType()
-            for _, other in capture_list:
-                typ = make_simplified_union([typ, other])
-
-            captures[capture_list[0][0]] = typ
+            captures[capture_list[0][0]] = make_simplified_union([typ for _, typ in capture_list])
 
         union_type = make_simplified_union(types)
         return PatternType(union_type, current_type, captures)

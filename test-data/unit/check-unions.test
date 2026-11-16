@@ -1,5 +1,21 @@
 -- Type checking of union types
 
+[case testUnionAccumulatedConditions]
+class T: pass
+
+def f(value: int | str | T | None) -> None:
+    if value is None or isinstance(value, str) or isinstance(value, T):
+        reveal_type(value)  # N: Revealed type is "builtins.str | __main__.T | None"
+    else:
+        reveal_type(value)  # N: Revealed type is "builtins.int"
+
+def g(value: int | str | T | None) -> None:
+    if value is not None and not isinstance(value, str) and not isinstance(value, T):
+        reveal_type(value)  # N: Revealed type is "builtins.int"
+    else:
+        reveal_type(value)  # N: Revealed type is "builtins.str | __main__.T | None"
+[builtins fixtures/isinstance.pyi]
+
 [case testUnion1]
 from typing import Union
 def f(x: Union[int, str]) -> None:

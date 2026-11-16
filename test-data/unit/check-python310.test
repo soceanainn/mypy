@@ -1672,6 +1672,21 @@ match m:
         reveal_type(x)  # N: Revealed type is "builtins.list[Any] | builtins.dict[Any, Any]"
 [builtins fixtures/dict.pyi]
 
+[case testMatchOrPatternAccumulatesCaptures]
+class T0: pass
+class T1: pass
+class T2: pass
+
+def f(value: T0 | T1 | T2) -> None:
+    match value:
+        case (T0() as item) | (T1() as item) | (T2() as item):
+            reveal_type(item)  # N: Revealed type is "__main__.T0 | __main__.T1 | __main__.T2"
+
+def g(value: object) -> None:
+    match value:
+        case ("a" as item) | ("b" as item) | ("c" as item):
+            reveal_type(item)  # N: Revealed type is "Literal['a'] | Literal['b'] | Literal['c']"
+
 -- Interactions --
 
 [case testMatchCapturePatternMultipleCases]
