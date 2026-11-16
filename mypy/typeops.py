@@ -46,6 +46,7 @@ from mypy.types import (
     FunctionLike,
     Instance,
     LiteralType,
+    LiteralValue,
     NoneType,
     NormalizedCallableType,
     Overloaded,
@@ -781,7 +782,7 @@ def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[
     for _direction in range(2):
         new_items: list[Type] = []
         # seen is a map from a type to its index in new_items
-        seen: dict[ProperType, int] = {}
+        seen: dict[ProperType | tuple[Instance, LiteralValue], int] = {}
         unduplicated_literal_fallbacks: set[Instance] | None = None
         for ti in items:
             proper_ti = get_proper_type(ti)
@@ -791,9 +792,14 @@ def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[
                 continue
 
             duplicate_index = -1
+            seen_key: ProperType | tuple[Instance, LiteralValue] = proper_ti
+            if isinstance(proper_ti, LiteralType) and proper_ti.fallback.type.is_enum:
+                # LiteralType hashes only its value. Members with the same name in
+                # different enums otherwise collide in the general duplicate index.
+                seen_key = (proper_ti.fallback, proper_ti.value)
             # Quickly check if we've seen this type
-            if proper_ti in seen:
-                duplicate_index = seen[proper_ti]
+            if seen_key in seen:
+                duplicate_index = seen[seen_key]
             elif (
                 isinstance(proper_ti, LiteralType)
                 and unduplicated_literal_fallbacks is not None
@@ -836,7 +842,7 @@ def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[
                     new_items[duplicate_index] = true_or_false(orig_item)
             else:
                 # We have a non-duplicate item, add it to new_items
-                seen[proper_ti] = len(new_items)
+                seen[seen_key] = len(new_items)
                 new_items.append(ti)
                 if isinstance(proper_ti, LiteralType):
                     if unduplicated_literal_fallbacks is None:

@@ -675,6 +675,33 @@ class TypeOpsSuite(Suite):
             UnionType([fx.lit_str1_inst, fx.lit_str2_inst]),
         )
 
+    def test_simplified_union_same_named_enum_members(self) -> None:
+        fx = self.fx
+        fallbacks = []
+        for i in range(20):
+            info = fx.make_type_info(f"T{i}", mro=[fx.oi])
+            info.is_enum = True
+            fallbacks.append(Instance(info, []))
+        literals = [LiteralType("A", fallback, line=i) for i, fallback in enumerate(fallbacks)]
+        literals[0].can_be_false = False
+        duplicate = LiteralType("A", fallbacks[0], line=100)
+        duplicate.can_be_true = False
+        result = make_simplified_union([*literals, duplicate], contract_literals=False)
+        assert isinstance(result, UnionType)
+        assert_equal(len(result.items), len(literals))
+        assert_equal([item.line for item in result.items], list(range(len(literals))))
+        assert result.items[0].can_be_true
+        assert result.items[0].can_be_false
+
+    def test_simplified_enum_literals_with_distinct_fallback_arguments(self) -> None:
+        fx = self.fx
+        info = fx.make_type_info("T", typevars=["T"], mro=[fx.oi])
+        info.is_enum = True
+        literals = [LiteralType("A", Instance(info, [arg])) for arg in (fx.a, fx.d)]
+        result = make_simplified_union(literals, contract_literals=False)
+        assert isinstance(result, UnionType)
+        assert_equal(result.items, literals)
+
     def test_simplified_union_with_mixed_str_literals(self) -> None:
         fx = self.fx
 
