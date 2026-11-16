@@ -675,6 +675,26 @@ class TypeOpsSuite(Suite):
             UnionType([fx.lit_str1_inst, fx.lit_str2_inst]),
         )
 
+    def test_simplified_literal_group_truthiness(self) -> None:
+        fx = self.fx
+        for literals in (["", "a", "b"], ["a", "", "b"], ["a", "b", ""]):
+            instance = true_only(fx.str_type)
+            instance.line = 10
+            result = make_simplified_union(
+                [instance, *(LiteralType(value, fx.str_type) for value in literals)]
+            )
+            assert isinstance(result, Instance)
+            assert_equal(result.line, 10)
+            assert result.can_be_true
+            assert result.can_be_false
+
+    def test_simplified_literal_group_constrained_typevar(self) -> None:
+        fx = self.fx
+        first = LiteralType("a", fx.str_type)
+        second = LiteralType("b", fx.str_type)
+        constrained = TypeVarType("T", "T", TypeVarId(1), [second], fx.o, fx.anyt)
+        self.assert_simplified_union([constrained, fx.str_type, first, second], fx.str_type)
+
     def test_simplified_union_with_mixed_str_literals(self) -> None:
         fx = self.fx
 

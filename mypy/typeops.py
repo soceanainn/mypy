@@ -783,6 +783,8 @@ def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[
         # seen is a map from a type to its index in new_items
         seen: dict[ProperType, int] = {}
         unduplicated_literal_fallbacks: set[Instance] | None = None
+        literal_groups: dict[Instance, int] | None = None
+        can_group_literals = True
         for ti in items:
             proper_ti = get_proper_type(ti)
 
@@ -794,6 +796,12 @@ def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[
             # Quickly check if we've seen this type
             if proper_ti in seen:
                 duplicate_index = seen[proper_ti]
+            elif (
+                isinstance(proper_ti, LiteralType)
+                and literal_groups is not None
+                and proper_ti.fallback in literal_groups
+            ):
+                duplicate_index = literal_groups[proper_ti.fallback]
             elif (
                 isinstance(proper_ti, LiteralType)
                 and unduplicated_literal_fallbacks is not None
@@ -826,6 +834,16 @@ def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[
                         ti, tj, keep_erased_types=keep_erased, ignore_promotions=True
                     ):
                         duplicate_index = j
+                        if (
+                            can_group_literals
+                            and isinstance(proper_ti, LiteralType)
+                            and isinstance(proper_tj, Instance)
+                        ):
+                            # Literal-to-instance subtyping depends only on the fallback.
+                            # Share the first matching supertype across the literal group.
+                            if literal_groups is None:
+                                literal_groups = {}
+                            literal_groups[proper_ti.fallback] = j
                         break
             if duplicate_index != -1:
                 # If deleted subtypes had more general truthiness, use that
@@ -838,6 +856,10 @@ def _remove_redundant_union_items(items: list[Type], keep_erased: bool) -> list[
                 # We have a non-duplicate item, add it to new_items
                 seen[proper_ti] = len(new_items)
                 new_items.append(ti)
+                if not isinstance(proper_ti, (Instance, LiteralType)):
+                    # Other targets, such as constrained type variables, may match
+                    # individual values before the group's instance supertype.
+                    can_group_literals = False
                 if isinstance(proper_ti, LiteralType):
                     if unduplicated_literal_fallbacks is None:
                         unduplicated_literal_fallbacks = set()
