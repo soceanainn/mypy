@@ -1142,7 +1142,16 @@ class UnboundType(ProperType):
         return visitor.visit_unbound_type(self)
 
     def __hash__(self) -> int:
-        return hash((self.name, self.optional, tuple(self.args), self.original_str_expr))
+        return hash(
+            (
+                self.name,
+                self.optional,
+                self.empty_tuple_index,
+                tuple(self.args),
+                self.original_str_expr,
+                self.original_str_fallback,
+            )
+        )
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, UnboundType):
@@ -1150,6 +1159,7 @@ class UnboundType(ProperType):
         return (
             self.name == other.name
             and self.optional == other.optional
+            and self.empty_tuple_index == other.empty_tuple_index
             and self.args == other.args
             and self.original_str_expr == other.original_str_expr
             and self.original_str_fallback == other.original_str_fallback
@@ -1594,7 +1604,7 @@ class ExtraAttrs:
         self.mod_name = mod_name
 
     def __hash__(self) -> int:
-        return hash((tuple(self.attrs.items()), tuple(sorted(self.immutable))))
+        return hash((frozenset(self.attrs.items()), frozenset(self.immutable)))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ExtraAttrs):
@@ -2251,6 +2261,7 @@ class Parameters(ParametersBase):
                 tuple(self.arg_types),
                 tuple(self.arg_names),
                 tuple(self.arg_kinds),
+                tuple(self.variables),
             )
         )
 
@@ -2260,6 +2271,7 @@ class Parameters(ParametersBase):
                 self.arg_types == other.arg_types
                 and self.arg_names == other.arg_names
                 and self.arg_kinds == other.arg_kinds
+                and self.variables == other.variables
                 and self.is_ellipsis_args == other.is_ellipsis_args
             )
         else:
@@ -2555,7 +2567,10 @@ class CallableType(ParametersBase, FunctionLike):
                 tuple(self.arg_types),
                 tuple(self.arg_names),
                 tuple(self.arg_kinds),
+                tuple(self.variables),
                 self.fallback,
+                self.type_guard,
+                self.type_is,
             )
         )
 
@@ -2566,6 +2581,7 @@ class CallableType(ParametersBase, FunctionLike):
                 and self.arg_types == other.arg_types
                 and self.arg_names == other.arg_names
                 and self.arg_kinds == other.arg_kinds
+                and self.variables == other.variables
                 and self.name == other.name
                 and self.is_ellipsis_args == other.is_ellipsis_args
                 and self.type_guard == other.type_guard

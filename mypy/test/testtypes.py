@@ -36,10 +36,12 @@ from mypy.types import (
     LITERAL_TYPE,
     AnyType,
     CallableType,
+    ExtraAttrs,
     Instance,
     LiteralType,
     NoneType,
     Overloaded,
+    Parameters,
     ProperType,
     SentinelValue,
     TupleType,
@@ -247,6 +249,46 @@ class TypesSuite(Suite):
         A.accept(visitor)
         modules = visitor.modules
         assert modules == {"__main__", "builtins"}
+
+    def test_extra_attrs_hash_ignores_insertion_order(self) -> None:
+        left = ExtraAttrs({"x": self.fx.a, "y": self.fx.d}, {"x", "y"})
+        right = ExtraAttrs({"y": self.fx.d, "x": self.fx.a}, {"y", "x"})
+        self.assertEqual(left, right)
+        self.assertEqual(hash(left), hash(right))
+        self.assertEqual({left: "cached"}[right], "cached")
+
+        left_instance = Instance(self.fx.ai, [], extra_attrs=left)
+        right_instance = Instance(self.fx.ai, [], extra_attrs=right)
+        self.assertEqual(left_instance, right_instance)
+        self.assertEqual(hash(left_instance), hash(right_instance))
+        self.assertEqual(len({left_instance, right_instance}), 1)
+
+    def test_unbound_type_empty_tuple_index_equality(self) -> None:
+        bare = UnboundType("tuple")
+        empty = UnboundType("tuple", empty_tuple_index=True)
+        self.assertNotEqual(bare, empty)
+        self.assertEqual(len({bare, empty}), 2)
+        same_empty = UnboundType("tuple", empty_tuple_index=True)
+        self.assertEqual(empty, same_empty)
+        self.assertEqual(hash(empty), hash(same_empty))
+
+    def test_callable_type_generic_variables_equality(self) -> None:
+        callable = self.fx.callable(self.fx.t, self.fx.t).copy_modified(variables=[self.fx.t])
+        same = callable.copy_modified(variables=[self.fx.t.copy_modified()])
+        self.assertEqual(callable, same)
+        self.assertEqual(hash(callable), hash(same))
+        different_bound = self.fx.t.copy_modified(upper_bound=self.fx.a)
+        self.assertNotEqual(callable, callable.copy_modified(variables=[different_bound]))
+        self.assertNotEqual(callable, callable.copy_modified(variables=[]))
+
+    def test_parameters_generic_variables_equality(self) -> None:
+        parameters = Parameters([self.fx.t], [ARG_POS], [None], variables=[self.fx.t])
+        same = parameters.copy_modified(variables=[self.fx.t.copy_modified()])
+        self.assertEqual(parameters, same)
+        self.assertEqual(hash(parameters), hash(same))
+        different_bound = self.fx.t.copy_modified(upper_bound=self.fx.a)
+        self.assertNotEqual(parameters, parameters.copy_modified(variables=[different_bound]))
+        self.assertNotEqual(parameters, parameters.copy_modified(variables=[]))
 
     def test_typeddict_type_constructor_signature(self) -> None:
         typ = TypedDictType({"x": self.fx.o}, {"x"}, set(), self.fx.a, 10, 20)
