@@ -3079,7 +3079,7 @@ class ExpressionChecker(ExpressionVisitor[Type], ExpressionCheckerSharedApi):
                     # Union[int -> int, str -> str](Union[int, str]) is invalid and
                     # we don't want to introduce internal inconsistencies.
                     unioned_result = (
-                        make_simplified_union(returns, context.line, context.column),
+                        make_simplified_union(returns),
                         self.combine_function_signatures(get_proper_types(inferred_types)),
                     )
 

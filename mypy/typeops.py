@@ -684,8 +684,6 @@ def is_simple_literal(t: ProperType) -> bool:
 
 def make_simplified_union(
     items: Sequence[Type],
-    line: int = -1,
-    column: int = -1,
     *,
     keep_erased: bool = False,
     contract_literals: bool = True,
@@ -694,6 +692,8 @@ def make_simplified_union(
     """Build union type with redundant union items removed.
 
     If only a single item remains, this may return a non-union type.
+    New union objects have no source location; callers should use the expression
+    context for diagnostics. Locations on individual items are preserved.
 
     Examples:
 
@@ -731,7 +731,7 @@ def make_simplified_union(
     ):
         simplified_set = try_contracting_literals_in_union(simplified_set)
 
-    result = get_proper_type(UnionType.make_union(simplified_set, line, column))
+    result = get_proper_type(UnionType.make_union(simplified_set))
 
     nitems = len(items)
     if nitems > 1 and (
@@ -883,7 +883,7 @@ def true_only(t: Type) -> ProperType:
         # The true version of a union type is the union of the true versions of its components
         new_items = [true_only(item) for item in t.items]
         can_be_true_items = [item for item in new_items if item.can_be_true]
-        return make_simplified_union(can_be_true_items, line=t.line, column=t.column)
+        return make_simplified_union(can_be_true_items)
     elif isinstance(t, Instance) and t.type.fullname == "builtins.bool":
         return LiteralType(True, fallback=t)
     else:
@@ -920,7 +920,7 @@ def false_only(t: Type) -> ProperType:
         # The false version of a union type is the union of the false versions of its components
         new_items = [false_only(item) for item in t.items]
         can_be_false_items = [item for item in new_items if item.can_be_false]
-        return make_simplified_union(can_be_false_items, line=t.line, column=t.column)
+        return make_simplified_union(can_be_false_items)
     elif isinstance(t, Instance) and t.type.fullname in ("builtins.str", "builtins.bytes"):
         return LiteralType("", fallback=t)
     elif isinstance(t, Instance) and t.type.fullname == "builtins.int":
@@ -954,7 +954,7 @@ def true_or_false(t: Type) -> ProperType:
 
     if isinstance(t, UnionType):
         new_items = [true_or_false(item) for item in t.items]
-        return make_simplified_union(new_items, line=t.line, column=t.column)
+        return make_simplified_union(new_items)
 
     new_t = copy_type(t)
     new_t.can_be_true = new_t.can_be_true_default()
