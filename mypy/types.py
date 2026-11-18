@@ -294,7 +294,10 @@ class Type(mypy.nodes.Context):
 
     __slots__ = ("_can_be_true", "_can_be_false")
     # 'can_be_true' and 'can_be_false' mean whether the value of the
-    # expression can be true or false in a boolean context. They are useful
+    # expression can be true or false in a boolean context. These restrictions
+    # participate in type equality and hashing, so narrowed types remain distinct
+    # as cache keys. As with other type attributes, do not change them while a type
+    # is being used as a dictionary key or set member. They are useful
     # when inferring the type of logic expressions like `x and y`.
     #
     # For example:
@@ -462,6 +465,8 @@ class TypeAliasType(Type):
 
     def __eq__(self, other: object) -> bool:
         # Note: never use this to determine subtype relationships, use is_subtype().
+        # Do not inspect target truthiness here: alias targets may still be incomplete
+        # during semantic analysis. Truthiness restrictions apply to expanded types.
         if not isinstance(other, TypeAliasType):
             return NotImplemented
         return self.alias == other.alias and self.args == other.args
@@ -730,7 +735,9 @@ class TypeVarType(TypeVarLikeType):
         return visitor.visit_type_var(self)
 
     def __hash__(self) -> int:
-        return hash((self.id, self.upper_bound, tuple(self.values)))
+        return hash(
+            (self.id, self.upper_bound, tuple(self.values), self.can_be_true, self.can_be_false)
+        )
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TypeVarType):
@@ -740,6 +747,8 @@ class TypeVarType(TypeVarLikeType):
             and self.upper_bound == other.upper_bound
             and self.values == other.values
             and self.default == other.default
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
         )
 
     def serialize(self) -> JsonDict:
@@ -889,7 +898,7 @@ class ParamSpecType(TypeVarLikeType):
         return n
 
     def __hash__(self) -> int:
-        return hash((self.id, self.flavor, self.prefix))
+        return hash((self.id, self.flavor, self.prefix, self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, ParamSpecType):
@@ -900,6 +909,8 @@ class ParamSpecType(TypeVarLikeType):
             and self.flavor == other.flavor
             and self.prefix == other.prefix
             and self.default == other.default
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
         )
 
     def serialize(self) -> JsonDict:
@@ -1044,13 +1055,17 @@ class TypeVarTupleType(TypeVarLikeType):
         return visitor.visit_type_var_tuple(self)
 
     def __hash__(self) -> int:
-        return hash((self.id, self.min_len))
+        return hash((self.id, self.min_len, self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TypeVarTupleType):
             return NotImplemented
         return (
-            self.id == other.id and self.min_len == other.min_len and self.default == other.default
+            self.id == other.id
+            and self.min_len == other.min_len
+            and self.default == other.default
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
         )
 
     def copy_modified(
@@ -1142,7 +1157,16 @@ class UnboundType(ProperType):
         return visitor.visit_unbound_type(self)
 
     def __hash__(self) -> int:
-        return hash((self.name, self.optional, tuple(self.args), self.original_str_expr))
+        return hash(
+            (
+                self.name,
+                self.optional,
+                tuple(self.args),
+                self.original_str_expr,
+                self.can_be_true,
+                self.can_be_false,
+            )
+        )
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, UnboundType):
@@ -1153,6 +1177,8 @@ class UnboundType(ProperType):
             and self.args == other.args
             and self.original_str_expr == other.original_str_expr
             and self.original_str_fallback == other.original_str_fallback
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
         )
 
     def serialize(self) -> JsonDict:
@@ -1254,10 +1280,15 @@ class TypeList(ProperType):
         assert False, "Synthetic types don't serialize"
 
     def __hash__(self) -> int:
-        return hash(tuple(self.items))
+        return hash((tuple(self.items), self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, TypeList) and self.items == other.items
+        return (
+            isinstance(other, TypeList)
+            and self.items == other.items
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
+        )
 
 
 class UnpackType(ProperType):
@@ -1305,10 +1336,15 @@ class UnpackType(ProperType):
         return UnpackType(deserialize_type(typ))
 
     def __hash__(self) -> int:
-        return hash(self.type)
+        return hash((self.type, self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, UnpackType) and self.type == other.type
+        return (
+            isinstance(other, UnpackType)
+            and self.type == other.type
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
+        )
 
 
 class AnyType(ProperType):
@@ -1376,10 +1412,14 @@ class AnyType(ProperType):
         )
 
     def __hash__(self) -> int:
-        return hash(AnyType)
+        return hash((AnyType, self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, AnyType)
+        return (
+            isinstance(other, AnyType)
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
+        )
 
     def serialize(self) -> JsonDict:
         return {
@@ -1451,10 +1491,15 @@ class UninhabitedType(ProperType):
         return visitor.visit_uninhabited_type(self)
 
     def __hash__(self) -> int:
-        return hash((UninhabitedType, self.ambiguous))
+        return hash((UninhabitedType, self.ambiguous, self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, UninhabitedType) and other.ambiguous == self.ambiguous
+        return (
+            isinstance(other, UninhabitedType)
+            and other.ambiguous == self.ambiguous
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
+        )
 
     def serialize(self) -> JsonDict:
         return {".class": "UninhabitedType"}
@@ -1489,10 +1534,14 @@ class NoneType(ProperType):
         return False
 
     def __hash__(self) -> int:
-        return hash(NoneType)
+        return hash((NoneType, self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, NoneType)
+        return (
+            isinstance(other, NoneType)
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
+        )
 
     def accept(self, visitor: TypeVisitor[T]) -> T:
         return visitor.visit_none_type(self)
@@ -1723,7 +1772,7 @@ class Instance(ProperType):
     def __hash__(self) -> int:
         if self._hash == -1:
             self._hash = hash((self.type, self.args, self.last_known_value, self.extra_attrs))
-        return self._hash
+        return hash((self._hash, self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Instance):
@@ -1733,6 +1782,8 @@ class Instance(ProperType):
             and self.args == other.args
             and self.last_known_value == other.last_known_value
             and self.extra_attrs == other.extra_attrs
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
         )
 
     def serialize(self) -> JsonDict | str:
@@ -2251,6 +2302,8 @@ class Parameters(ParametersBase):
                 tuple(self.arg_types),
                 tuple(self.arg_names),
                 tuple(self.arg_kinds),
+                self.can_be_true,
+                self.can_be_false,
             )
         )
 
@@ -2261,6 +2314,8 @@ class Parameters(ParametersBase):
                 and self.arg_names == other.arg_names
                 and self.arg_kinds == other.arg_kinds
                 and self.is_ellipsis_args == other.is_ellipsis_args
+                and self.can_be_true == other.can_be_true
+                and self.can_be_false == other.can_be_false
             )
         else:
             return NotImplemented
@@ -2556,6 +2611,8 @@ class CallableType(ParametersBase, FunctionLike):
                 tuple(self.arg_names),
                 tuple(self.arg_kinds),
                 self.fallback,
+                self.can_be_true,
+                self.can_be_false,
             )
         )
 
@@ -2571,6 +2628,8 @@ class CallableType(ParametersBase, FunctionLike):
                 and self.type_guard == other.type_guard
                 and self.type_is == other.type_is
                 and self.fallback == other.fallback
+                and self.can_be_true == other.can_be_true
+                and self.can_be_false == other.can_be_false
             )
         else:
             return NotImplemented
@@ -2762,12 +2821,16 @@ class Overloaded(FunctionLike):
         return visitor.visit_overloaded(self)
 
     def __hash__(self) -> int:
-        return hash(tuple(self.items))
+        return hash((tuple(self.items), self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, Overloaded):
             return NotImplemented
-        return self.items == other.items
+        return (
+            self.items == other.items
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
+        )
 
     def serialize(self) -> JsonDict:
         return {
@@ -2887,12 +2950,19 @@ class TupleType(ProperType):
         return visitor.visit_tuple_type(self)
 
     def __hash__(self) -> int:
-        return hash((tuple(self.items), self.partial_fallback))
+        return hash(
+            (tuple(self.items), self.partial_fallback, self.can_be_true, self.can_be_false)
+        )
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TupleType):
             return NotImplemented
-        return self.items == other.items and self.partial_fallback == other.partial_fallback
+        return (
+            self.items == other.items
+            and self.partial_fallback == other.partial_fallback
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
+        )
 
     def serialize(self) -> JsonDict:
         return {
@@ -3080,6 +3150,8 @@ class TypedDictType(ProperType):
                 frozenset(self.required_keys),
                 frozenset(self.readonly_keys),
                 self.is_closed,
+                self.can_be_true,
+                self.can_be_false,
             )
         )
 
@@ -3098,6 +3170,8 @@ class TypedDictType(ProperType):
             and self.required_keys == other.required_keys
             and self.readonly_keys == other.readonly_keys
             and self.is_closed == other.is_closed
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
         )
 
     def serialize(self) -> JsonDict:
@@ -3294,13 +3368,15 @@ class RawExpressionType(ProperType):
         assert False, "Synthetic types don't serialize"
 
     def __hash__(self) -> int:
-        return hash((self.literal_value, self.base_type_name))
+        return hash((self.literal_value, self.base_type_name, self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, RawExpressionType):
             return (
                 self.base_type_name == other.base_type_name
                 and self.literal_value == other.literal_value
+                and self.can_be_true == other.can_be_true
+                and self.can_be_false == other.can_be_false
             )
         else:
             return NotImplemented
@@ -3364,11 +3440,16 @@ class LiteralType(ProperType):
 
     def __hash__(self) -> int:
         # Intentionally a subset of __eq__ for perf
-        return hash(self.value)
+        return hash((self.value, self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, LiteralType):
-            return self.value == other.value and self.fallback == other.fallback
+            return (
+                self.value == other.value
+                and self.fallback == other.fallback
+                and self.can_be_true == other.can_be_true
+                and self.can_be_false == other.can_be_false
+            )
         else:
             return NotImplemented
 
@@ -3478,14 +3559,18 @@ class UnionType(ProperType):
         return any(item.can_be_false for item in self.items)
 
     def __hash__(self) -> int:
-        return hash(frozenset(self.items))
+        return hash((frozenset(self.items), self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, UnionType):
             return NotImplemented
         if self is other:
             return True
-        return frozenset(self.items) == frozenset(other.items)
+        return (
+            frozenset(self.items) == frozenset(other.items)
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
+        )
 
     @overload
     @staticmethod
@@ -3682,12 +3767,17 @@ class TypeType(ProperType):
         return visitor.visit_type_type(self)
 
     def __hash__(self) -> int:
-        return hash(self.item)
+        return hash((self.item, self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, TypeType):
             return NotImplemented
-        return self.item == other.item and self.is_type_form == other.is_type_form
+        return (
+            self.item == other.item
+            and self.is_type_form == other.is_type_form
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
+        )
 
     def serialize(self) -> JsonDict:
         return {
@@ -3745,12 +3835,17 @@ class PlaceholderType(ProperType):
         return ret
 
     def __hash__(self) -> int:
-        return hash((self.fullname, tuple(self.args)))
+        return hash((self.fullname, tuple(self.args), self.can_be_true, self.can_be_false))
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, PlaceholderType):
             return NotImplemented
-        return self.fullname == other.fullname and self.args == other.args
+        return (
+            self.fullname == other.fullname
+            and self.args == other.args
+            and self.can_be_true == other.can_be_true
+            and self.can_be_false == other.can_be_false
+        )
 
     def serialize(self) -> str:
         # We should never get here since all placeholders should be replaced

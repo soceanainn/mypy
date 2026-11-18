@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from unittest import TestCase, skipUnless
 
 from librt.internal import ReadBuffer, WriteBuffer
 
 from mypy.cache import read_tag
+from mypy.copytype import copy_type
 from mypy.erasetype import erase_type, remove_instance_last_known_values
 from mypy.indirection import TypeIndirectionVisitor
 from mypy.join import join_types
@@ -40,14 +42,21 @@ from mypy.types import (
     LiteralType,
     NoneType,
     Overloaded,
+    Parameters,
+    ParamSpecFlavor,
+    ParamSpecType,
+    PlaceholderType,
     ProperType,
+    RawExpressionType,
     SentinelValue,
     TupleType,
     Type,
     TypedDictType,
+    TypeList,
     TypeOfAny,
     TypeType,
     TypeVarId,
+    TypeVarTupleType,
     TypeVarType,
     UnboundType,
     UninhabitedType,
@@ -263,6 +272,115 @@ class TypesSuite(Suite):
             TypedDictType(  # type: ignore[call-arg]
                 {"x": self.fx.o}, {"x"}, set(), self.fx.a, 10, 20, True
             )
+
+
+class TruthinessTypeEqualitySuite(Suite):
+    def setUp(self) -> None:
+        self.fx = TypeFixture()
+
+    def type_factories(self) -> list[Callable[[], ProperType]]:
+        fx = self.fx
+        return [
+            lambda: UnboundType("X"),
+            lambda: TypeList([fx.a]),
+            lambda: UnpackType(fx.a),
+            lambda: AnyType(TypeOfAny.special_form),
+            lambda: UninhabitedType(),
+            lambda: NoneType(),
+            lambda: Instance(fx.ai, []),
+            lambda: fx.t.copy_modified(),
+            lambda: ParamSpecType("P", "P", TypeVarId(4), ParamSpecFlavor.BARE, fx.o, fx.anyt),
+            lambda: TypeVarTupleType("Ts", "Ts", TypeVarId(5), fx.o, fx.std_tuple, fx.anyt),
+            lambda: Parameters([fx.a], [ARG_POS], [None]),
+            lambda: fx.callable(fx.a, fx.d),
+            lambda: Overloaded([fx.callable(fx.a, fx.d), fx.callable(fx.d, fx.a)]),
+            lambda: TupleType([fx.a], fx.std_tuple),
+            lambda: TypedDictType({"x": fx.a}, {"x"}, set(), fx.a),
+            lambda: RawExpressionType(1, "builtins.int"),
+            lambda: LiteralType("x", fx.str_type),
+            lambda: UnionType([fx.a, fx.d]),
+            lambda: TypeType(fx.a),
+            lambda: PlaceholderType("X", [], 1),
+        ]
+
+    def test_truthiness_distinguishes_dictionary_keys(self) -> None:
+        for factory in self.type_factories():
+            with self.subTest(type=type(factory()).__name__):
+                cache: dict[Type, tuple[bool, bool]] = {}
+                for can_be_true, can_be_false in [
+                    (True, True),
+                    (True, False),
+                    (False, True),
+                    (False, False),
+                ]:
+                    typ = factory()
+                    typ.can_be_true = can_be_true
+                    typ.can_be_false = can_be_false
+                    cache[typ] = (can_be_true, can_be_false)
+                self.assertEqual(len(cache), 4)
+                for can_be_true, can_be_false in cache.values():
+                    same = factory()
+                    same.can_be_true = can_be_true
+                    same.can_be_false = can_be_false
+                    self.assertEqual(cache[same], (can_be_true, can_be_false))
+
+    def test_lazy_truthiness_does_not_change_hash(self) -> None:
+        for factory in self.type_factories():
+            typ = factory()
+            same = factory()
+            with self.subTest(type=type(typ).__name__):
+                initial_hash = hash(typ)
+                same.can_be_true = typ.can_be_true
+                same.can_be_false = typ.can_be_false
+                self.assertEqual(typ, same)
+                self.assertEqual(hash(typ), initial_hash)
+                self.assertEqual(hash(same), initial_hash)
+
+    def test_nested_truthiness_distinguishes_types(self) -> None:
+        fx = self.fx
+        wrappers: list[Callable[[Type], Type]] = [
+            lambda t: Instance(fx.gi, [t]),
+            lambda t: TupleType([t], fx.std_tuple),
+            lambda t: UnionType([t, fx.d]),
+            lambda t: fx.callable(t, fx.d),
+            lambda t: fx.callable(fx.d, t),
+            lambda t: Overloaded([fx.callable(t, fx.d)]),
+            lambda t: TypedDictType({"x": t}, {"x"}, set(), fx.a),
+            lambda t: Parameters([t], [ARG_POS], [None]),
+            lambda t: fx.t.copy_modified(upper_bound=t),
+            lambda t: TypeType.make_normalized(t),
+            lambda t: UnpackType(t),
+        ]
+        truthy = true_only(fx.a)
+        for wrap in wrappers:
+            with self.subTest(type=type(wrap(fx.a)).__name__):
+                general = wrap(fx.a)
+                narrowed = wrap(truthy)
+                self.assertNotEqual(general, narrowed)
+                cache = {general: "general", narrowed: "truthy"}
+                self.assertEqual(cache[wrap(fx.a)], "general")
+                self.assertEqual(cache[wrap(truthy)], "truthy")
+
+    def test_instance_hash_after_truthiness_copy(self) -> None:
+        original = self.fx.a
+        hash(original)
+        narrowed = copy_type(original)
+        narrowed.can_be_false = False
+        same = true_only(original)
+        self.assertEqual(narrowed, same)
+        self.assertEqual(hash(narrowed), hash(same))
+        self.assertNotEqual(original, narrowed)
+        self.assertTrue(original.can_be_false)
+
+    def test_simplification_combines_truthiness(self) -> None:
+        typ = self.fx.a
+        truthy = true_only(typ)
+        falsy = false_only(typ)
+        for items in ([truthy, falsy], [falsy, truthy], [truthy, typ], [typ, falsy]):
+            result = make_simplified_union(items)
+            self.assertEqual(result, typ)
+            self.assertTrue(result.can_be_true)
+            self.assertTrue(result.can_be_false)
 
 
 class TypeOpsSuite(Suite):
